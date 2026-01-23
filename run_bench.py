@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import os
+import platform
 import subprocess
 from pathlib import Path
 from huggingface_hub import HfApi
@@ -41,6 +43,62 @@ def check_access(dataset_name: str) -> bool:
         return False
 
 
+def collect_machine_info() -> dict:
+    """Collect CPU and GPU information about the current machine."""
+    info = {
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+        "processor": platform.processor(),
+        "machine": platform.machine(),
+    }
+    
+    # Try to get CPU count
+    try:
+        import multiprocessing
+        info["cpu_count"] = multiprocessing.cpu_count()
+    except Exception:
+        pass
+    
+    # Try to get more detailed CPU info
+    try:
+        import psutil
+        info["cpu_freq_mhz"] = psutil.cpu_freq().max if psutil.cpu_freq() else None
+        info["total_memory_gb"] = round(psutil.virtual_memory().total / (1024**3), 2)
+    except Exception:
+        pass
+    
+    # Try to get full CPU info from /proc/cpuinfo
+    try:
+        if os.path.exists("/proc/cpuinfo"):
+            with open("/proc/cpuinfo", "r") as f:
+                cpuinfo_raw = f.read()
+            info["cpuinfo"] = cpuinfo_raw
+    except Exception:
+        pass
+    
+    # Try to get GPU info using torch
+    try:
+        import torch
+        if torch.cuda.is_available():
+            info["cuda_available"] = True
+            info["cuda_version"] = torch.version.cuda
+            info["gpu_count"] = torch.cuda.device_count()
+            info["gpus"] = []
+            for i in range(torch.cuda.device_count()):
+                gpu_info = {
+                    "id": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "memory_gb": round(torch.cuda.get_device_properties(i).total_memory / (1024**3), 2),
+                }
+                info["gpus"].append(gpu_info)
+        else:
+            info["cuda_available"] = False
+    except Exception:
+        info["cuda_available"] = False
+    
+    return info
+
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
@@ -50,6 +108,8 @@ def main():
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files if exists")
     parser.add_argument("--device", type=str, default="auto", help="copmute device")
+    parser.add_argument("--benchmark-timing", type=int, default=None, metavar="N",
+                        help="Run each transcription N times and store all timing results")
     args = parser.parse_args()
 
     # Ensure engine script exists
@@ -59,6 +119,14 @@ def main():
 
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Collect and save machine info
+    machine_info = collect_machine_info()
+    machine_info_path = os.path.join("results", "machine.json")
+    os.makedirs("results", exist_ok=True)
+    with open(machine_info_path, "w") as f:
+        json.dump(machine_info, f, indent=2)
+    print(f"Machine info saved to {machine_info_path}")
 
     # Define dataset configurations as list of tuples
     datasets = [
@@ -103,6 +171,8 @@ def main():
             cmd.append("--overwrite")
         if ds_name:
             cmd.extend(["--name", ds_name])
+        if args.benchmark_timing:
+            cmd.extend(["--benchmark-timing", str(args.benchmark_timing)])
 
         try:
             subprocess.run(cmd, check=True)

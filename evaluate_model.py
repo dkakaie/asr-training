@@ -2,6 +2,7 @@
 
 import argparse
 import concurrent.futures
+import json
 import os
 
 import datasets
@@ -40,12 +41,22 @@ class HebrewTextNormalizer:
 
 
 def process_entry(args):
-    i, entry, transcribe_fn, text_column, normalizer = args
+    i, entry, transcribe_fn, text_column, normalizer, benchmark_timing = args
 
     raw_ref_text = entry[text_column]
     
     # transcribe_fn returns (text, transcription_time)
     raw_eval_text, transcription_time = transcribe_fn(entry)
+    
+    # If benchmark_timing is set, run additional iterations and collect all times
+    if benchmark_timing and benchmark_timing > 1:
+        all_times = [transcription_time]
+        for _ in range(benchmark_timing - 1):
+            _, t = transcribe_fn(entry)
+            all_times.append(t)
+        transcription_times_json = json.dumps(all_times)
+    else:
+        transcription_times_json = None
 
     ref_text = normalizer(raw_ref_text)
     eval_text = normalizer(raw_eval_text)
@@ -67,6 +78,9 @@ def process_entry(args):
         "audio_duration": len(entry["audio"]["array"]) / entry["audio"]["sampling_rate"],
         "transcription_time": transcription_time,
     }
+    
+    if transcription_times_json:
+        entry_data["transcription_times"] = transcription_times_json
 
     for key in entry.keys():
         if key not in ["audio", text_column]:
@@ -149,12 +163,12 @@ def calculate_transcription_time_stats(df: pandas.DataFrame):
         "raw_time": raw_time_stats
     }
 
-def evaluate_model(transcribe_fn, ds, text_column, num_workers=1):
+def evaluate_model(transcribe_fn, ds, text_column, num_workers=1, benchmark_timing=None):
     normalizer = HebrewTextNormalizer()
     entries_data = []
 
     # Prepare arguments for parallel processing
-    process_args = [(i, ds[i], transcribe_fn, text_column, normalizer) for i in range(len(ds))]
+    process_args = [(i, ds[i], transcribe_fn, text_column, normalizer, benchmark_timing) for i in range(len(ds))]
 
     # Process entries in parallel with progress tracking
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -189,6 +203,8 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use for evaluation")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite exists outputs, otherwise - reuse them")
     parser.add_argument("--device", type=str, default="auto", help="Compute device")
+    parser.add_argument("--benchmark-timing", type=int, default=None, metavar="N",
+                        help="Run each transcription N times and store all timing results")
 
     args = parser.parse_args()
 
@@ -220,7 +236,7 @@ if __name__ == "__main__":
             ds = datasets.load_dataset(dataset_name, trust_remote_code=True)[dataset_split]
 
         print(f"Beginning evaluation with {args.workers} workers.")
-        results_df = evaluate_model(transcribe_fn, ds, ds_text_column, args.workers)
+        results_df = evaluate_model(transcribe_fn, ds, ds_text_column, args.workers, args.benchmark_timing)
 
         # Add model and dataset info as columns
         results_df["model"] = args.model
