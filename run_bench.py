@@ -122,8 +122,7 @@ def main():
     
     # Collect and save machine info
     machine_info = collect_machine_info()
-    machine_info_path = os.path.join("results", "machine.json")
-    os.makedirs("results", exist_ok=True)
+    machine_info_path = os.path.join(args.output_dir, "machine.json")
     with open(machine_info_path, "w") as f:
         json.dump(machine_info, f, indent=2)
     print(f"Machine info saved to {machine_info_path}")
