@@ -452,6 +452,7 @@ def generate_examples_from_slices(
                 yield example
                 prev_example = example
             except Exception as e:
+                prev_example = None
                 logger.error(
                     f'Error processing slice seek {float(slice["seek"]):.2f} in {source_id}:{source_entry_id}: {e}'
                 )
