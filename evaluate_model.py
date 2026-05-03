@@ -129,7 +129,8 @@ def calculate_final_metrics(df: pandas.DataFrame):
 
 def calculate_transcription_time_stats(df: pandas.DataFrame):
     """Calculate transcription time statistics for segments >= 5 seconds: per audio second, per output character, and raw transcription time"""
-    
+    df["predicted_text"] = df["predicted_text"].fillna("")
+
     # Calculate audio durations and text lengths, filtering segments >= 5 seconds
     audio_durations = []
     text_lengths = []

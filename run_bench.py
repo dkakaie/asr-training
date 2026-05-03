@@ -136,7 +136,6 @@ def main():
         ("ivrit-ai/eval-whatsapp:test:text", None, "ivrit_ai_eval_whatsapp"),
         ("upai-inc/saspeech:test:text", None, "saspeech"),
         ("google/fleurs:test:transcription", "he_il", "fleurs"),
-        ("mozilla-foundation/common_voice_17_0:test:sentence", "he", "common_voice_17"),
         ("imvladikon/hebrew_speech_kan:validation:sentence", None, "hebrew_speech_kan"),
     ]
 
